@@ -4,12 +4,28 @@
          syntax/modresolve)
 (provide (all-defined-out))
 
-;; TODO (maybe)
-;; - if file is X.rkt, also check for X.ss
-;; - check for .so, .dll, .dylib
+;; Goal: To prevent "link: module mismatch" errors, especially when
+;; some modules are intercepted (eg by current-load) to be recompiled
+;; from source with instrumentation.
 
-;; We assume the current load/use-compiled handler implements the same
-;; behavior as the default handler.
+;; Approach: Replace the default load/use-compiled handler with one
+;; that peeks at the zo file and checks its dependencies before
+;; loading the zo file. If any dependency has a stale zo file or is
+;; blacklisted, the module is loaded from source. The zo blacklist is
+;; used to indicate what files will be intercepted by a special
+;; compiler (eg instrumentation for profiling, coverage, etc).
+
+;; We assume the load-zo function (defaulting to the current
+;; load/use-compiled handler) has behavior compatible with the default
+;; handler (eg wrt zo search paths, etc).
+
+;; TODO
+;; - if file is X.rkt, also check for X.ss (maybe?)
+;; - check for .so, .dll, .dylib, higher priority than .zo
+;; - return zo-file from use-zo?, pass to load-zo function (?)
+;; - helper functions to produce blacklist preds from module path
+;;   patterns (eg, "everything in the db collection", "everything in
+;;   mumble/private/**"); see current-library-collection-{links,paths}
 
 ;; ----------------------------------------
 
