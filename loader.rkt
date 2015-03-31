@@ -17,16 +17,6 @@
 
 ;; ----------------------------------------
 
-(current-load
- (let ([old (current-load)])
-   (lambda args
-     (dynamic-wind void
-                   (lambda ()
-                     (tprintf "load" args)
-                     (in!)
-                     (apply old args))
-                   out!))))
-
 ;; use-zo?-table : hash[path => boolean]
 (define use-zo?-table (make-hash))
 
@@ -70,10 +60,25 @@
   (define zo-file (build-path dir "compiled" zo-file-name))
   zo-file)
 
+;; ----------------------------------------
+
+;; We assume the current load/use-compiled handler implements the same
+;; behavior as the default handler.
+
 ;; Not implemented (yet?):
 ;; - if file is X.rkt, also check for X.ss
 ;; - check for .so, .dll, .dylib
 ;; - if name is (list #f submod ...), never load from source
+
+(current-load
+ (let ([old (current-load)])
+   (lambda args
+     (dynamic-wind void
+                   (lambda ()
+                     (tprintf "load" args)
+                     (in!)
+                     (apply old args))
+                   out!))))
 
 (current-load/use-compiled
  (let ([old (current-load/use-compiled)])
@@ -82,7 +87,11 @@
                    (lambda ()
                      (tprintf "load/uc" (list file name))
                      (in!)
-                     (cond [(use-zo? file)
+                     (cond [(and (pair? name) (eq? (car name) #f))
+                            ;; Never load from source; must trust bytecode
+                            (iprintf "forced bytecode: ~s\n" file)
+                            (old file name)]
+                           [(use-zo? file)
                             (iprintf "zo ok: ~s\n" file)
                             (old file name)]
                            [else
