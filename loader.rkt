@@ -8,17 +8,6 @@
 ;; - if file is X.rkt, also check for X.ss
 ;; - check for .so, .dll, .dylib
 
-(define indent 0)
-(define (in!) (set! indent (+ indent 1)))
-(define (out!) (set! indent (- indent 1)))
-(define (iprintf fmt . args)
-  (eprintf "~a" (make-string indent #\-))
-  (apply eprintf fmt args))
-(define (tprintf who args)
-  (iprintf "~a: ~a\n"
-           who
-           (string-join (map (lambda (x) (format "~s" x)) args))))
-
 ;; ----------------------------------------
 
 ;; A ModName is (U #f Symbol (cons (U #f Symbol) (Listof Symbol)))
@@ -33,34 +22,54 @@
    blacklist    ;; Path -> Boolean
    load-zo      ;; (Path ModName -> Any)  -- Note: given orig path, NOT zo path
    load-src     ;; (Path ModName -> Any)
+   indent       ;; (U #f (box Nat))
    )
   #:property prop:procedure
   (lambda (self file name)
     (dynamic-wind void
                   (lambda ()
-                    (tprintf "load/uc" (list file name))
-                    (in!)
+                    ((adjust-indent! self 1))
                     (cond [(use-zo? self file)
-                           (iprintf "using zo for ~s\n" file)
+                           (iprintf self "using zo for ~s\n" file)
                            (let ([load-zo (custom-load/use-compiled-load-zo self)])
                              (load-zo file name))]
                           [(and (pair? name) (eq? (car name) #f))
                            ;; means don't load from source; since can't use bytecode,
                            ;; must not load at all (w/o complaint)
-                           (iprintf "forced to skip ~s\n" file)
+                           (iprintf self "forced to skip ~s\n" file)
                            (void)]
                           [else
-                           (iprintf "using source for ~s\n" file)
+                           (iprintf self "using source for ~s\n" file)
                            (parameterize ((current-load-relative-directory (path-only file)))
                              (let ([load-src (custom-load/use-compiled-load-src self)])
                                (load-src file name)))]))
-                  out!)))
+                  (adjust-indent! self -1))))
 
 (define (make-custom-load/use-compiled
          #:blacklist [blacklist (lambda (file) #f)]
          #:load-zo   [load-zo (current-load/use-compiled)]
-         #:load-src  [load-src (current-load)])
-  (custom-load/use-compiled (make-hash) (blacklist->pred blacklist) load-zo load-src))
+         #:load-src  [load-src (current-load)]
+         #:verbose?  [verbose? #f])
+  (custom-load/use-compiled (make-hash)
+                            (blacklist->pred blacklist)
+                            load-zo load-src
+                            (and verbose? (box 0))))
+
+;; ----------------------------------------
+
+;; adjust-indent! : CLUC Int -> (-> Void)
+(define (adjust-indent! self adjust)
+  (cond [(custom-load/use-compiled-indent self)
+         => (lambda (b) (lambda () (set-box! b (+ (unbox b) adjust))))]
+        [else void]))
+
+;; iprintf : CLUC String Any ... -> Void
+(define (iprintf self fmt . args)
+  (cond [(custom-load/use-compiled-indent self)
+         => (lambda (indent-b)
+              (eprintf "~a" (make-string (unbox indent-b) #\-))
+              (apply eprintf fmt args))]
+        [else (void)]))
 
 ;; ----------------------------------------
 
@@ -99,7 +108,7 @@
 ;; file-use-zo? : CLUC Path -> Boolean
 (define (file-use-zo? self file)
   (cond [(blacklisted? self file)
-         (iprintf "blacklisted: ~s\n" file)
+         (iprintf self "blacklisted: ~s\n" file)
          #f]
         [else
          (file-use-zo?* self file)]))
@@ -114,12 +123,12 @@
   (define file-name (file-name-from-path file))
   (define zo-file (find-zo-file dir file-name))
   (cond [(not zo-file)
-         (iprintf "absent zo\n")
+         (iprintf self "no zo for ~s\n" file)
          #f]
         [(> (file-or-directory-modify-seconds file)
             (file-or-directory-modify-seconds zo-file))
          ;; zo is stale
-         (iprintf "stale zo: ~s\n" zo-file)
+         (iprintf self "stale zo: ~s\n" zo-file)
          #f]
         [(read-zo-module zo-file)
          => (lambda (zo)
@@ -127,7 +136,7 @@
                          [imp (in-list (cdr phase+imps))])
                 (use-zo? self (resolve-module-path-index imp file))))]
         [else
-         (iprintf "garbage zo: ~s\n" zo-file)
+         (iprintf self "garbage zo: ~s\n" zo-file)
          #f]))
 
 ;; find-zo-file : Path Path -> (U Path #f)
@@ -167,15 +176,5 @@
 
 (current-load/use-compiled
  (make-custom-load/use-compiled
+  #:verbose? #t
   #:blacklist (lambda (mod) ((current-blacklist) mod))))
-
-;; Just for debugging
-(current-load
- (let ([old (current-load)])
-   (lambda args
-     (dynamic-wind void
-                   (lambda ()
-                     (tprintf "load" args)
-                     (in!)
-                     (apply old args))
-                   out!))))
