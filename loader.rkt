@@ -48,7 +48,7 @@
 (define (make-custom-load/use-compiled
          #:blacklist [blacklist (lambda (file) #f)]
          #:load-zo   [load-zo (current-load/use-compiled)]
-         #:load-src  [load-src (current-load)]
+         #:load-src  [load-src (lambda (file name) ((current-load) file name))]
          #:verbose?  [verbose? #f])
   (custom-load/use-compiled (make-hash)
                             (blacklist->pred blacklist)
