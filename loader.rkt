@@ -8,20 +8,20 @@
 ;; - if file is X.rkt, also check for X.ss
 ;; - check for .so, .dll, .dylib
 
-;; ----------------------------------------
-
-;; A ModName is (U #f Symbol (cons (U #f Symbol) (Listof Symbol)))
-;; A ResolvedMod is (U Symbol Path (list* 'submod (U Symbol Path) (Listof Symbol)))
-
 ;; We assume the current load/use-compiled handler implements the same
 ;; behavior as the default handler.
+
+;; ----------------------------------------
+
+;; A WantName is (U #f Symbol (cons (U #f Symbol) (Listof Symbol)))
+;; A ResolvedMod is (U Symbol Path (list* 'submod (U Symbol Path) (Listof Symbol)))
 
 ;; A CLUC is an instance of custom-load/use-compiled:
 (struct custom-load/use-compiled
   (cache        ;; hash[ Path => Boolean ]
    blacklist    ;; Path -> Boolean
-   load-zo      ;; (Path ModName -> Any)  -- Note: given orig path, NOT zo path
-   load-src     ;; (Path ModName -> Any)
+   load-zo      ;; (Path WantName -> Any)  -- Note: given orig path, NOT zo path
+   load-src     ;; (Path WantName -> Any)
    indent       ;; (U #f (box Nat))
    )
   #:property prop:procedure
