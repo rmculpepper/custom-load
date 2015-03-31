@@ -66,26 +66,23 @@
   (define dir (path-only file))
   (define file-name (file-name-from-path file))
   (define zo-file (find-zo-file dir file-name))
-  (define zo (and zo-file
-                  (with-handlers ([exn:fail? (lambda (e) #f)])
-                    (parameterize ((read-accept-compiled #t))
-                      (call-with-input-file zo-file (lambda (in) (read in)))))))
   (cond [(not zo-file)
          (iprintf "absent zo\n")
-         #f]
-        [(not (compiled-module-expression? zo))
-         (iprintf "garbage zo: ~s\n" zo-file)
          #f]
         [(> (file-or-directory-modify-seconds file)
             (file-or-directory-modify-seconds zo-file))
          ;; zo is stale
          (iprintf "stale zo: ~s\n" zo-file)
          #f]
-        [else ;; zo is compiled-module-expression
-         ;; (iprintf "checking dependencies: ~s\n" file)
-         (for*/and ([phase+imps (in-list (module-compiled-imports zo))]
-                    [imp (in-list (cdr phase+imps))])
-           (use-zo? (resolve-module-path-index imp file)))]))
+        [(read-zo-module zo-file)
+         => (lambda (zo)
+              ;; (iprintf "checking dependencies: ~s\n" file)
+              (for*/and ([phase+imps (in-list (module-compiled-imports zo))]
+                         [imp (in-list (cdr phase+imps))])
+                (use-zo? (resolve-module-path-index imp file))))]
+        [else
+         (iprintf "garbage zo: ~s\n" zo-file)
+         #f]))
 
 (define (find-zo-file dir file-name)
   (define zo-file-name (path-add-suffix file-name ".zo"))
@@ -98,6 +95,17 @@
       ;; suffix : relative-path?
       (define zo-file (build-path dir* suffix zo-file-name))
       (and (file-exists? zo-file) zo-file))))
+
+(define (read-zo-module zo-file)
+  (parameterize ((read-accept-compiled #t))
+    (with-handlers ([exn:fail? (lambda (e) #f)])
+      (call-with-input-file* zo-file
+        (lambda (in)
+          (define zo (read in))
+          (define more (read in))
+          (and (compiled-module-expression? zo)
+               (eof-object? more)
+               zo))))))
 
 ;; ----------------------------------------
 
@@ -126,15 +134,15 @@
                      (tprintf "load/uc" (list file name))
                      (in!)
                      (cond [(use-zo? file)
-                            (iprintf "zo ok: ~s\n" file)
+                            (iprintf "using zo for ~s\n" file)
                             (old file name)]
                            [(and (pair? name) (eq? (car name) #f))
                             ;; means don't load from source; since can't use bytecode,
                             ;; must not load at all (w/o complaint)
-                            (iprintf "forced skip: ~s\n" file)
+                            (iprintf "forced to skip ~s\n" file)
                             (void)]
                            [else
-                            (iprintf "source: ~s\n" file)
+                            (iprintf "using source for ~s\n" file)
                             (parameterize ((current-load-relative-directory (path-only file)))
                               ((current-load) file name))]))
                    out!))))
