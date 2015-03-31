@@ -73,7 +73,6 @@
 ;; Not implemented (yet?):
 ;; - if file is X.rkt, also check for X.ss
 ;; - check for .so, .dll, .dylib
-;; - if name is (list #f submod ...), never load from source
 
 (current-load
  (let ([old (current-load)])
