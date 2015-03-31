@@ -45,12 +45,14 @@
          (use-zo? (cadr mod))]
         [(path-string? mod)
          (let ([mod (simplify-path mod)])
-           (hash-ref! use-zo?-table mod
-                      (lambda ()
-                        ;; Submodules can cause cycles in use-zo?, so tentatively
-                        ;; put mod in table as ok to use zo?, then replace once checked.
-                        (hash-set! use-zo?-table mod 'pending)
-                        (file-use-zo? mod))))]))
+           (and
+            (hash-ref! use-zo?-table mod
+                       (lambda ()
+                         ;; Submodules can cause cycles in use-zo?, so tentatively
+                         ;; put mod in table as ok to use zo?, then replace once checked.
+                         (hash-set! use-zo?-table mod 'pending)
+                         (file-use-zo? mod)))
+            #t))]))
 
 ;; file-use-zo? : path -> boolean
 (define (file-use-zo? file)
@@ -63,19 +65,21 @@
 (define (file-use-zo?* file)
   (define dir (path-only file))
   (define file-name (file-name-from-path file))
-  (define zo-file (file->zo-file dir file-name))
-  (define zo (and (file-exists? zo-file)
-                  (with-handlers ([(lambda (e) #t) (lambda (e) #f)])
+  (define zo-file (find-zo-file dir file-name))
+  (define zo (and zo-file
+                  (with-handlers ([exn:fail? (lambda (e) #f)])
                     (parameterize ((read-accept-compiled #t))
                       (call-with-input-file zo-file (lambda (in) (read in)))))))
-  (cond [(not (compiled-module-expression? zo))
-         (iprintf "absent or garbage: ~s\n" zo-file)
-         ;; zo file doesn't exist or contains garbage
+  (cond [(not zo-file)
+         (iprintf "absent zo\n")
+         #f]
+        [(not (compiled-module-expression? zo))
+         (iprintf "garbage zo: ~s\n" zo-file)
          #f]
         [(> (file-or-directory-modify-seconds file)
             (file-or-directory-modify-seconds zo-file))
          ;; zo is stale
-         (iprintf "stale ~s\n" file)
+         (iprintf "stale zo: ~s\n" zo-file)
          #f]
         [else ;; zo is compiled-module-expression
          ;; (iprintf "checking dependencies: ~s\n" file)
@@ -83,12 +87,17 @@
                     [imp (in-list (cdr phase+imps))])
            (use-zo? (resolve-module-path-index imp file)))]))
 
-(define (file->zo-file dir file-name)
-  ;; (use-compiled-file-paths)     : (listof relative-path?)
-  ;; (current-compiled-file-roots) : (listof (U 'same path?))
+(define (find-zo-file dir file-name)
   (define zo-file-name (path-add-suffix file-name ".zo"))
-  (define zo-file (build-path dir "compiled" zo-file-name))
-  zo-file)
+  (for/or ([root (in-list (current-compiled-file-roots))])
+    ;; root : (U 'same path?)
+    (define dir*
+      (cond [(and (path? root) (absolute-path? root)) (reroot-path dir root)]
+            [else (build-path dir root)]))
+    (for/or ([suffix (in-list (use-compiled-file-paths))])
+      ;; suffix : relative-path?
+      (define zo-file (build-path dir* suffix zo-file-name))
+      (and (file-exists? zo-file) zo-file))))
 
 ;; ----------------------------------------
 
