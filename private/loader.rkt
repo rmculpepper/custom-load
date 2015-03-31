@@ -181,16 +181,3 @@
           (and (compiled-module-expression? zo)
                (eof-object? more)
                zo))))))
-
-;; ============================================================
-;; Top-level convenience layer
-
-(define current-blacklist (make-parameter (lambda (mod) #f)))
-
-(define (blacklist! . specs)
-  (current-blacklist (blacklist->pred specs)))
-
-(current-load/use-compiled
- (make-custom-load/use-compiled
-  #:verbose? #t
-  #:blacklist (lambda (mod) ((current-blacklist) mod))))
