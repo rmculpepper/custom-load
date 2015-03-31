@@ -11,10 +11,27 @@
   (eprintf "~a" (make-string indent #\-))
   (apply eprintf fmt args))
 (define (tprintf who args)
-  (iprintf "~a(~a) ~a\n"
+  (iprintf "~a: ~a\n"
            who
-           (length args)
            (string-join (map (lambda (x) (format "~s" x)) args))))
+
+;; ----------------------------------------
+
+;; Never use zo for any mod s.t. ((current-blacklist?) mod) is true.
+(define current-blacklist? (make-parameter (lambda (mod) #f)))
+
+(define (blacklist . specs)
+  (current-blacklist?
+   (let ([preds (map blacklist-spec->pred specs)])
+     (lambda (mod)
+       (for/or ([pred preds]) (pred mod))))))
+
+(define (blacklist-spec->pred spec)
+  (cond [(procedure? spec)
+         spec]
+        [(regexp? spec)
+         (lambda (mod) (regexp-match? spec (path->string mod)))]
+        [else (error 'blacklist "bad blacklist spec: ~e" spec)]))
 
 ;; ----------------------------------------
 
@@ -26,7 +43,7 @@
   (cond [(symbol? mod) #t]
         [(pair? mod)
          (use-zo? (cadr mod))]
-        [(path? mod)
+        [(path-string? mod)
          (let ([mod (simplify-path mod)])
            (hash-ref! use-zo?-table mod
                       (lambda ()
@@ -37,6 +54,13 @@
 
 ;; file-use-zo? : path -> boolean
 (define (file-use-zo? file)
+  (cond [((current-blacklist?) file)
+         (iprintf "blacklisted: ~s\n" file)
+         #f]
+        [else
+         (file-use-zo?* file)]))
+
+(define (file-use-zo?* file)
   (define dir (path-only file))
   (define file-name (file-name-from-path file))
   (define zo-file (file->zo-file dir file-name))
@@ -54,6 +78,7 @@
          (iprintf "stale ~s\n" file)
          #f]
         [else ;; zo is compiled-module-expression
+         ;; (iprintf "checking dependencies: ~s\n" file)
          (for*/and ([phase+imps (in-list (module-compiled-imports zo))]
                     [imp (in-list (cdr phase+imps))])
            (use-zo? (resolve-module-path-index imp file)))]))
@@ -91,16 +116,16 @@
                    (lambda ()
                      (tprintf "load/uc" (list file name))
                      (in!)
-                     (cond [(and (pair? name) (eq? (car name) #f))
-                            ;; Never load from source; must trust bytecode
-                            (iprintf "forced bytecode: ~s\n" file)
-                            (old file name)]
-                           [(use-zo? file)
+                     (cond [(use-zo? file)
                             (iprintf "zo ok: ~s\n" file)
                             (old file name)]
+                           [(and (pair? name) (eq? (car name) #f))
+                            ;; means don't load from source; since can't use bytecode,
+                            ;; must not load at all (w/o complaint)
+                            (iprintf "forced skip: ~s\n" file)
+                            (void)]
                            [else
-                            ;; avoid bad zo; load file directly
-                            (iprintf "zo bad: ~s\n" file)
+                            (iprintf "source: ~s\n" file)
                             (parameterize ((current-load-relative-directory (path-only file)))
                               ((current-load) file name))]))
                    out!))))
