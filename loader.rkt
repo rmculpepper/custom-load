@@ -4,6 +4,10 @@
          syntax/modresolve)
 (provide (all-defined-out))
 
+;; TODO (maybe)
+;; - if file is X.rkt, also check for X.ss
+;; - check for .so, .dll, .dylib
+
 (define indent 0)
 (define (in!) (set! indent (+ indent 1)))
 (define (out!) (set! indent (- indent 1)))
@@ -17,52 +21,95 @@
 
 ;; ----------------------------------------
 
-;; Never use zo for any mod s.t. ((current-blacklist?) mod) is true.
-(define current-blacklist? (make-parameter (lambda (mod) #f)))
+;; A ModName is (U #f Symbol (cons (U #f Symbol) (Listof Symbol)))
+;; A ResolvedMod is (U Symbol Path (list* 'submod (U Symbol Path) (Listof Symbol)))
 
-(define (blacklist . specs)
-  (current-blacklist?
-   (let ([preds (map blacklist-spec->pred specs)])
-     (lambda (mod)
-       (for/or ([pred preds]) (pred mod))))))
+;; We assume the current load/use-compiled handler implements the same
+;; behavior as the default handler.
 
-(define (blacklist-spec->pred spec)
+;; A CLUC is an instance of custom-load/use-compiled:
+(struct custom-load/use-compiled
+  (cache        ;; hash[ Path => Boolean ]
+   blacklist    ;; Path -> Boolean
+   load-zo      ;; (Path ModName -> Any)  -- Note: given orig path, NOT zo path
+   load-src     ;; (Path ModName -> Any)
+   )
+  #:property prop:procedure
+  (lambda (self file name)
+    (dynamic-wind void
+                  (lambda ()
+                    (tprintf "load/uc" (list file name))
+                    (in!)
+                    (cond [(use-zo? self file)
+                           (iprintf "using zo for ~s\n" file)
+                           (let ([load-zo (custom-load/use-compiled-load-zo self)])
+                             (load-zo file name))]
+                          [(and (pair? name) (eq? (car name) #f))
+                           ;; means don't load from source; since can't use bytecode,
+                           ;; must not load at all (w/o complaint)
+                           (iprintf "forced to skip ~s\n" file)
+                           (void)]
+                          [else
+                           (iprintf "using source for ~s\n" file)
+                           (parameterize ((current-load-relative-directory (path-only file)))
+                             (let ([load-src (custom-load/use-compiled-load-src self)])
+                               (load-src file name)))]))
+                  out!)))
+
+(define (make-custom-load/use-compiled
+         #:blacklist [blacklist (lambda (file) #f)]
+         #:load-zo   [load-zo (current-load/use-compiled)]
+         #:load-src  [load-src (current-load)])
+  (custom-load/use-compiled (make-hash) (blacklist->pred blacklist) load-zo load-src))
+
+;; ----------------------------------------
+
+(define (blacklist->pred spec)
+  ;; FIXME: might be better to do all regexps together, avoid repeated path->string
   (cond [(procedure? spec)
          spec]
         [(regexp? spec)
          (lambda (mod) (regexp-match? spec (path->string mod)))]
-        [else (error 'blacklist "bad blacklist spec: ~e" spec)]))
+        [(null? spec)
+         (lambda (mod) #f)]
+        [(list? spec)
+         (let ([preds (map blacklist->pred spec)])
+           (lambda (mod) (for/or ([pred (in-list preds)]) (pred mod))))]
+        [else (error 'custom-load/use-compiled "bad blacklist: ~e" spec)]))
 
 ;; ----------------------------------------
 
-;; use-zo?-table : hash[path => boolean]
-(define use-zo?-table (make-hash))
-
-;; use-zo? : (U symbol path (list 'submod ...)) -> boolean
-(define (use-zo? mod)
+;; use-zo? : CLUC ResolvedMod -> boolean
+(define (use-zo? self mod)
   (cond [(symbol? mod) #t]
         [(pair? mod)
-         (use-zo? (cadr mod))]
+         (use-zo? self (cadr mod))]
         [(path-string? mod)
-         (let ([mod (simplify-path mod)])
+         (let ([mod (simplify-path mod)]
+               [cache (custom-load/use-compiled-cache self)])
            (and
-            (hash-ref! use-zo?-table mod
+            (hash-ref! cache mod
                        (lambda ()
                          ;; Submodules can cause cycles in use-zo?, so tentatively
                          ;; put mod in table as ok to use zo?, then replace once checked.
-                         (hash-set! use-zo?-table mod 'pending)
-                         (file-use-zo? mod)))
+                         (hash-set! cache mod 'pending)
+                         (file-use-zo? self mod)))
             #t))]))
 
-;; file-use-zo? : path -> boolean
-(define (file-use-zo? file)
-  (cond [((current-blacklist?) file)
+;; file-use-zo? : CLUC Path -> Boolean
+(define (file-use-zo? self file)
+  (cond [(blacklisted? self file)
          (iprintf "blacklisted: ~s\n" file)
          #f]
         [else
-         (file-use-zo?* file)]))
+         (file-use-zo?* self file)]))
 
-(define (file-use-zo?* file)
+;; blacklisted? : CLUC Path -> Boolean
+(define (blacklisted? self file)
+  ((custom-load/use-compiled-blacklist self) file))
+
+;; file-use-zo?* : CLUC Path -> Boolean
+(define (file-use-zo?* self file)
   (define dir (path-only file))
   (define file-name (file-name-from-path file))
   (define zo-file (find-zo-file dir file-name))
@@ -76,14 +123,16 @@
          #f]
         [(read-zo-module zo-file)
          => (lambda (zo)
-              ;; (iprintf "checking dependencies: ~s\n" file)
               (for*/and ([phase+imps (in-list (module-compiled-imports zo))]
                          [imp (in-list (cdr phase+imps))])
-                (use-zo? (resolve-module-path-index imp file))))]
+                (use-zo? self (resolve-module-path-index imp file))))]
         [else
          (iprintf "garbage zo: ~s\n" zo-file)
          #f]))
 
+;; find-zo-file : Path Path -> (U Path #f)
+;; Returns the zo file that would be used by the default load/use-compiled handler.
+;; Note: doesn't do ".rkt" -> ".ss" mapping, and ignores native libs (.so/.dll/.dylib)
 (define (find-zo-file dir file-name)
   (define zo-file-name (path-add-suffix file-name ".zo"))
   (for/or ([root (in-list (current-compiled-file-roots))])
@@ -96,6 +145,7 @@
       (define zo-file (build-path dir* suffix zo-file-name))
       (and (file-exists? zo-file) zo-file))))
 
+;; read-zo-module : Path -> (U #f Compiled-Module-Expression)
 (define (read-zo-module zo-file)
   (parameterize ((read-accept-compiled #t))
     (with-handlers ([exn:fail? (lambda (e) #f)])
@@ -107,15 +157,19 @@
                (eof-object? more)
                zo))))))
 
-;; ----------------------------------------
+;; ============================================================
+;; Top-level convenience layer
 
-;; We assume the current load/use-compiled handler implements the same
-;; behavior as the default handler.
+(define current-blacklist (make-parameter (lambda (mod) #f)))
 
-;; Not implemented (yet?):
-;; - if file is X.rkt, also check for X.ss
-;; - check for .so, .dll, .dylib
+(define (blacklist! . specs)
+  (current-blacklist (blacklist->pred specs)))
 
+(current-load/use-compiled
+ (make-custom-load/use-compiled
+  #:blacklist (lambda (mod) ((current-blacklist) mod))))
+
+;; Just for debugging
 (current-load
  (let ([old (current-load)])
    (lambda args
@@ -124,25 +178,4 @@
                      (tprintf "load" args)
                      (in!)
                      (apply old args))
-                   out!))))
-
-(current-load/use-compiled
- (let ([old (current-load/use-compiled)])
-   (lambda (file name)
-     (dynamic-wind void
-                   (lambda ()
-                     (tprintf "load/uc" (list file name))
-                     (in!)
-                     (cond [(use-zo? file)
-                            (iprintf "using zo for ~s\n" file)
-                            (old file name)]
-                           [(and (pair? name) (eq? (car name) #f))
-                            ;; means don't load from source; since can't use bytecode,
-                            ;; must not load at all (w/o complaint)
-                            (iprintf "forced to skip ~s\n" file)
-                            (void)]
-                           [else
-                            (iprintf "using source for ~s\n" file)
-                            (parameterize ((current-load-relative-directory (path-only file)))
-                              ((current-load) file name))]))
                    out!))))
