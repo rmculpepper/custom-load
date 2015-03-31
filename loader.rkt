@@ -2,6 +2,7 @@
 (require racket/path
          racket/string
          syntax/modresolve)
+(provide (all-defined-out))
 
 (define indent 0)
 (define (in!) (set! indent (+ indent 1)))
@@ -20,14 +21,19 @@
 ;; use-zo?-table : hash[path => boolean]
 (define use-zo?-table (make-hash))
 
-;; use-zo? : (U symbol path) -> boolean
+;; use-zo? : (U symbol path (list 'submod ...)) -> boolean
 (define (use-zo? mod)
-  (hash-ref! use-zo?-table mod (lambda () (inner-use-zo? mod))))
-
-;; inner-use-zo? : (U symbol path) -> boolean
-(define (inner-use-zo? mod)
   (cond [(symbol? mod) #t]
-        [else (file-use-zo? mod)]))
+        [(pair? mod)
+         (use-zo? (cadr mod))]
+        [(path? mod)
+         (let ([mod (simplify-path mod)])
+           (hash-ref! use-zo?-table mod
+                      (lambda ()
+                        ;; Submodules can cause cycles in use-zo?, so tentatively
+                        ;; put mod in table as ok to use zo?, then replace once checked.
+                        (hash-set! use-zo?-table mod 'pending)
+                        (file-use-zo? mod))))]))
 
 ;; file-use-zo? : path -> boolean
 (define (file-use-zo? file)
@@ -40,7 +46,6 @@
                       (call-with-input-file zo-file (lambda (in) (read in)))))))
   (cond [(not (compiled-module-expression? zo))
          (iprintf "absent or garbage: ~s\n" zo-file)
-         (eprintf "zo = ~s\n" zo)
          ;; zo file doesn't exist or contains garbage
          #f]
         [(> (file-or-directory-modify-seconds file)
@@ -98,5 +103,5 @@
                             ;; avoid bad zo; load file directly
                             (iprintf "zo bad: ~s\n" file)
                             (parameterize ((current-load-relative-directory (path-only file)))
-                              (load file name))]))
+                              ((current-load) file name))]))
                    out!))))
