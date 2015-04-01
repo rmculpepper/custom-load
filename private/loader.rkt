@@ -20,12 +20,14 @@
 ;; handler (eg wrt zo search paths, etc).
 
 ;; TODO
+;; - use logger rather than (or in addition to) iprintf
 ;; - if file is X.rkt, also check for X.ss (maybe?)
 ;; - check for .so, .dll, .dylib, higher priority than .zo
 ;; - return zo-file from use-zo?, pass to load-zo function (?)
 ;; - helper functions to produce blacklist preds from module path
 ;;   patterns (eg, "everything in the db collection", "everything in
 ;;   mumble/private/**"); see current-library-collection-{links,paths}
+;; - add option to use .dep file to get dependencies
 
 ;; ----------------------------------------
 
