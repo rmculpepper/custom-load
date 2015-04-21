@@ -12,5 +12,4 @@
 
 (current-load/use-compiled
  (make-custom-load/use-compiled
-  #:verbose? #t
   #:blacklist (lambda (mod) ((current-zo-blacklist) mod))))

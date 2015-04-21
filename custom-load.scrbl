@@ -25,6 +25,9 @@ because its bytecode is already loaded. The handlers produced by this
 library recursively check ancestors before loading a descendant's
 @tt{".zo"} file.
 
+This library uses a logger named @tt{custom-load}; to see its output,
+try setting @exec|{PLTSTDERR="info@custom-load"}|.
+
 @section[#:tag "custom-load"]{Custom Compiled-Load Handlers}
 
 @defmodule[custom-load]
