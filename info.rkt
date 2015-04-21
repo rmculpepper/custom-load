@@ -12,3 +12,4 @@
 ;; collection info
 (define name "custom-load")
 (define scribblings '(["custom-load.scrbl" ()]))
+(define compile-omit-paths '("test"))
