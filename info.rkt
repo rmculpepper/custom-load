@@ -4,10 +4,7 @@
 (define collection "custom-load")
 (define deps '("base"))
 (define build-deps '("racket-doc"
-                     "scribble-lib"
-                     "pict-doc"
-                     "plot-doc"
-                     "math-doc"))
+                     "scribble-lib"))
 
 ;; collection info
 (define name "custom-load")
