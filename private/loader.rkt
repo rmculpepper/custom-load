@@ -69,7 +69,7 @@
          #:load-src  [load-src (lambda (file name) ((current-load) file name))]
          #:verbose?  [verbose? #f])
   (custom-load/use-compiled (make-hash)
-                            (blacklist->pred blacklist)
+                            (blacklist->pred 'make-custom-load/use-compiled blacklist)
                             load-zo load-src
                             (and verbose? (box 0))))
 
@@ -91,18 +91,18 @@
 
 ;; ----------------------------------------
 
-(define (blacklist->pred spec)
+(define (blacklist->pred who spec)
   ;; FIXME: might be better to do all regexps together, avoid repeated path->string
-  (cond [(procedure? spec)
-         spec]
-        [(regexp? spec)
-         (lambda (mod) (regexp-match? spec (path->string mod)))]
-        [(null? spec)
-         (lambda (mod) #f)]
-        [(list? spec)
-         (let ([preds (map blacklist->pred spec)])
-           (lambda (mod) (for/or ([pred (in-list preds)]) (pred mod))))]
-        [else (error 'custom-load/use-compiled "bad blacklist: ~e" spec)]))
+  (define (loop spec)
+    (cond [(and (procedure? spec) (procedure-arity-includes? spec 1))
+           spec]
+          [(regexp? spec)
+           (lambda (mod) (regexp-match? spec (path->string mod)))]
+          [(list? spec)
+           (let ([preds (map loop spec)])
+             (lambda (mod) (for/or ([pred (in-list preds)]) (pred mod))))]
+          [else (error who "bad blacklist: ~e" spec)]))
+  (loop spec))
 
 ;; ----------------------------------------
 

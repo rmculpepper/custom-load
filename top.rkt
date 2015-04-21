@@ -1,15 +1,14 @@
 #lang racket/base
 (require "private/loader.rkt")
-(provide current-zo-blacklist
-         zo-blacklist!)
+(provide current-zo-blacklist)
 
 ;; ============================================================
 ;; Top-level convenience layer
 
-(define current-zo-blacklist (make-parameter (lambda (mod) #f)))
-
-(define (zo-blacklist! . specs)
-  (current-zo-blacklist (blacklist->pred specs)))
+(define current-zo-blacklist
+  (make-parameter
+   (lambda (mod) #f)
+   (lambda (spec) (blacklist->pred 'current-zo-blacklist spec))))
 
 (current-load/use-compiled
  (make-custom-load/use-compiled

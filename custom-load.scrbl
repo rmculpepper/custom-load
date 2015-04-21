@@ -109,6 +109,7 @@ the default branch.
 
 }
 
+
 @section[#:tag "top-level"]{Automatic Installation of Loader}
 
 @defmodule[custom-load/top]
@@ -118,15 +119,14 @@ installs a custom loader as the value of
 @racket[current-load/use-compiled], using the old value as the
 @racket[_load-zo] argument.
 
-@defparam[current-zo-blacklist pred (-> path? any/c)]{
+You can also run a program with a custom loader using a command line
+like @exec{racket -l custom-load/top -t program.rkt}.
+
+@defparam*[current-zo-blacklist pred
+           (treeof (or/c (-> path? any/c) regexp?))
+           (-> path? any/c)]{
 
 Parameter holding the zo blacklist predicate used by the
 @reference-tech{compiled-load handler} installed by
 @racketmodname[custom-load/top].
-}
-
-@defproc[(zo-blacklist! [rx/pred (or/c regexp? (-> path? any/c))] ...) void?]{
-
-Updates @racket[current-zo-blacklist] with a predicate synthesized
-from the @racket[rx/pred] list.
 }
