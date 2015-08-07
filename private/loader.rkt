@@ -117,7 +117,10 @@
   (define dir (path-only file))
   (define file-name (file-name-from-path file))
   (define zo-file (find-zo-file dir file-name))
-  (cond [(not zo-file)
+  ;; If the file does not exist we must use continue to use
+  ;; current-load/use-compiled, which does not fail in this case
+  (cond [(not (file-exists? file)) #t]
+        [(not zo-file)
          (log-custom-load-info "no zo for ~s" file)
          #f]
         [(> (file-or-directory-modify-seconds file)
