@@ -42,7 +42,14 @@
    load-zo      ;; (Path WantName -> Any)  -- Note: given orig path, NOT zo path
    load-src)    ;; (Path WantName -> Any)
   #:property prop:procedure
-  (lambda (self file name)
+  (lambda (self file/maybe-badext name)
+    (define file
+      (if (file-exists? file/maybe-badext)
+          file/maybe-badext
+          (if (or (not (equal? (filename-extension file/maybe-badext) #"rkt"))
+                  (not (symbol? name)))
+              file/maybe-badext
+              (path-replace-suffix file/maybe-badext #".ss"))))
     (cond [(use-zo? self file)
            (log-custom-load-info "using zo for ~s" file)
            (let ([load-zo (custom-load/use-compiled-load-zo self)])
