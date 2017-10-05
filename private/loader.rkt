@@ -59,6 +59,12 @@
            ;; must not load at all (w/o complaint)
            (log-custom-load-info "skipping (zo submod request) ~s" file)
            (void)]
+          [(and (pair? name) (car name) (not (file-exists? file)))
+           ;; the default use-compiled handler ``failed'' silently
+           ;; when requested for submodules in a nonexistent file.
+           (log-custom-load-info "skipping submod ~a in nonexistent file ~s"
+                                 name file)
+           (void)]
           [else
            (log-custom-load-info "using source for ~s" file)
            (parameterize ((current-load-relative-directory (path-only file)))
