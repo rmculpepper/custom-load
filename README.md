@@ -1,3 +1,3 @@
 # custom-load
 
-Read the documentation at http://rmculpepper.github.io/custom-load/custom-load.html
+Read the documentation at https://docs.racket-lang.org/custom-load/index.html
