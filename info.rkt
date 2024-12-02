@@ -1,3 +1,6 @@
+;; Copyright 2015 Ryan Culpepper
+;; SPDX-License-Identifier: Apache-2.0 OR MIT
+
 #lang info
 
 ;; pkg info
@@ -5,6 +8,7 @@
 (define deps '("base"))
 (define build-deps '("racket-doc"
                      "scribble-lib"))
+(define license '(Apache-2.0 OR MIT))
 
 ;; collection info
 (define name "custom-load")
